@@ -104,10 +104,15 @@ export default function App() {
       if (!response.ok) {
         let errStr = 'Lỗi server';
         try {
-          const errRes = await response.json();
-          errStr = errRes.error || errStr;
+          const text = await response.text();
+          try {
+            const errRes = JSON.parse(text);
+            errStr = errRes.error || errStr;
+          } catch {
+            errStr = text || errStr;
+          }
         } catch(e) {
-          errStr = await response.text() || errStr;
+          console.error("Failed to read error response", e);
         }
         throw new Error(errStr);
       }
