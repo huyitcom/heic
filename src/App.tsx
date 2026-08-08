@@ -120,7 +120,7 @@ export default function App() {
     } catch (error: any) {
       console.error("conversion error for file", fileState.file.name, ":", error);
       
-      let errMsg = error instanceof Error ? error.message : 'Lỗi khi chuyển đổi file qua server.';
+      let errMsg = "Lỗi: " + (error instanceof Error ? error.message : typeof error === 'object' ? JSON.stringify(error) : String(error));
 
       setFiles((prev) =>
         prev.map((f) =>
