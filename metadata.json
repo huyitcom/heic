@@ -1,0 +1,6 @@
+{
+  "name": "HEIC to JPG Converter",
+  "description": "Convert HEIC images to JPG format directly in your browser.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
