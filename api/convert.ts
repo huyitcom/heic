@@ -1,29 +1,39 @@
-import express from "express";
-import path from "path";
-import sharp from "sharp";
-import convert from "heic-convert";
-import { createServer as createViteServer } from "vite";
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import sharp from 'sharp';
+import convert from 'heic-convert';
 
-const app = express();
-const PORT = 3000;
+export const config = {
+  api: {
+    bodyParser: false,
+    responseLimit: '10mb',
+  },
+};
 
-// API routes
-app.post("/api/convert", express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   try {
-    if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+    const format = req.query.format as string || "JPG";
+    const quality = parseFloat(req.query.quality as string) || 92;
+
+    const chunks = [];
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+
+    if (buffer.length === 0) {
       return res.status(400).json({ error: "No file provided" });
     }
 
-    const format = req.query.format as string || "JPG";
-    const quality = parseFloat(req.query.quality as string) || 92;
     const isPng = format === "PNG";
     const isWebp = format === "WEBP";
-
     let outputBuffer: Buffer;
     
     try {
-      // First try with Sharp
-      let sharpInstance = sharp(req.body);
+      let sharpInstance = sharp(buffer);
 
       if (isPng) {
         sharpInstance = sharpInstance.png({ quality: Math.round(quality) });
@@ -37,15 +47,13 @@ app.post("/api/convert", express.raw({ type: '*/*', limit: '100mb' }), async (re
     } catch (sharpError) {
       console.warn("Sharp conversion failed, falling back to heic-convert:", sharpError);
       
-      // Fallback to heic-convert
       const fallbackFormat = isPng ? "PNG" : "JPEG";
       const convertedBuffer = await convert({
-        buffer: req.body,
+        buffer: buffer,
         format: fallbackFormat,
         quality: quality / 100
       });
       
-      // If WEBP was requested but we fell back to heic-convert, we can use sharp again to convert from JPEG to WEBP
       if (isWebp) {
         outputBuffer = await sharp(Buffer.from(convertedBuffer)).webp({ quality: Math.round(quality) }).toBuffer();
       } else {
@@ -60,26 +68,4 @@ app.post("/api/convert", express.raw({ type: '*/*', limit: '100mb' }), async (re
     console.error("Conversion error:", error);
     res.status(500).json({ error: error.message || "Failed to convert file" });
   }
-});
-
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
-  });
 }
-
-startServer();

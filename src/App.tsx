@@ -91,24 +91,32 @@ export default function App() {
     if (!fileState) return;
 
     try {
-      const formatMap: Record<string, string> = {
-        'JPG': 'image/jpeg',
-        'PNG': 'image/png',
-        'WEBP': 'image/webp'
-      };
-
-      const outMimeType = formatMap[settings.format] || 'image/jpeg';
-      
-      const heic2any = (await import('heic2any')).default;
-      
-      const convertedResult = await heic2any({
-        blob: fileState.file,
-        toType: outMimeType,
-        quality: settings.quality / 100
+      const response = await fetch(`/api/convert?format=${settings.format}&quality=${settings.quality}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream'
+        },
+        body: fileState.file
       });
 
-      const blob = Array.isArray(convertedResult) ? convertedResult[0] : convertedResult;
-      const url = URL.createObjectURL(blob as Blob);
+      if (!response.ok) {
+        let errStr = 'Lỗi server';
+        try {
+          const text = await response.text();
+          try {
+            const errRes = JSON.parse(text);
+            errStr = errRes.error || errStr;
+          } catch {
+            errStr = text || errStr;
+          }
+        } catch(e) {
+          console.error("Failed to read error response", e);
+        }
+        throw new Error(errStr);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
 
       setFiles((prev) =>
         prev.map((f) =>
