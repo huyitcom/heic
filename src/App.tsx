@@ -8,7 +8,7 @@ import {
   Upload, Settings, History, Eye, Download, Trash2, 
   CheckCircle2, ImageIcon, Layers, ShieldCheck, Check, 
   Sparkles, RefreshCw, AlertCircle, ArrowRight,
-  SlidersHorizontal, Maximize, FileText
+  SlidersHorizontal, Maximize, FileText, Globe
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import JSZip from 'jszip';
@@ -23,7 +23,83 @@ type FileState = {
   error?: string;
 };
 
+const t = {
+  vi: {
+    hero1: "KÉO THẢ",
+    hero2: "ẢNH VÀO ĐÂY",
+    dragDrop: "CHỌN HOẶC KÉO THẢ FILE HEIC",
+    dragDesc: "Hỗ trợ upload hàng loạt • Tối đa 100MB mỗi ảnh",
+    hq: "CHẤT LƯỢNG CAO",
+    fast: "XỬ LÝ NHANH",
+    exif: "GIỮ NGUYÊN EXIF",
+    batchMode: "Chế độ hàng loạt",
+    settings: "Cài đặt",
+    history: "Lịch sử",
+    queue: "Hàng đợi",
+    convertRem: "Chuyển đổi file còn lại",
+    convertNow: "Chuyển đổi ngay",
+    processing: "Đang xử lý",
+    ready: "Hoàn tất",
+    retry: "Thử lại",
+    dl: "Tải về",
+    dlAll: "Tải xuống tất cả (ZIP)",
+    activeQueue: "Hàng đợi",
+    allSuccess: "Tất cả file đã chuyển đổi thành công",
+    converting: "Đang chuyển đổi...",
+    outFormat: "Định dạng đầu ra",
+    imgQuality: "Chất lượng ảnh",
+    resizeOutput: "Kích thước tối đa",
+    suffixOut: "Hậu tố file",
+    poweredBy: "ĐƯỢC TẠO BỞI",
+    errNoHeic: "Vui lòng chọn file định dạng HEIC.",
+    errMax: (len: number) => `Bạn đã chọn ${len} file. Hệ thống chỉ hỗ trợ tối đa 50 file cùng lúc.`,
+    errServer: "Lỗi chuyển đổi file.",
+    originalRes: "Giữ nguyên (100%)",
+    uhd: "4K (Tối đa 3840px)",
+    fhd: "Full HD (Tối đa 1920px)",
+    hd: "HD (Tối đa 1280px)"
+  },
+  en: {
+    hero1: "DROP YOUR",
+    hero2: "IMAGES HERE",
+    dragDrop: "SELECT OR DRAG HEIC FILES",
+    dragDesc: "Supports batch upload • Max file size: 100MB per image",
+    hq: "HIGH QUALITY",
+    fast: "FAST PROCESSING",
+    exif: "EXIF PRESERVED",
+    batchMode: "Batch Mode",
+    settings: "Settings",
+    history: "History",
+    queue: "Conversion Queue",
+    convertRem: "Convert Remaining",
+    convertNow: "Convert Now",
+    processing: "Processing",
+    ready: "Ready",
+    retry: "Retry",
+    dl: "Download",
+    dlAll: "Download All (ZIP)",
+    activeQueue: "Active Queue",
+    allSuccess: "All files converted successfully",
+    converting: "Converting...",
+    outFormat: "Output Format",
+    imgQuality: "Image Quality",
+    resizeOutput: "Resize / Max Resolution",
+    suffixOut: "Output Filename Suffix",
+    poweredBy: "POWERED BY",
+    errNoHeic: "Please select HEIC format files.",
+    errMax: (len: number) => `You selected ${len} files. Maximum 50 files allowed at once.`,
+    errServer: "Server conversion error.",
+    originalRes: "Original Resolution (100%)",
+    uhd: "4K Ultra HD (Max 3840px)",
+    fhd: "Full HD 1080p (Max 1920px)",
+    hd: "Web HD (Max 1280px)"
+  }
+};
+
 export default function App() {
+  const [lang, setLang] = useState<'vi' | 'en'>('vi');
+  const txt = t[lang];
+
   const [files, setFiles] = useState<FileState[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -52,7 +128,7 @@ export default function App() {
     );
 
     if (heicFiles.length === 0) {
-      alert('Vui lòng chọn file định dạng HEIC.');
+      alert(txt.errNoHeic);
       return;
     }
 
@@ -62,7 +138,14 @@ export default function App() {
       status: 'pending',
     }));
 
-    setFiles((prev) => [...prev, ...newFileStates]);
+    setFiles((prev) => {
+      const combined = [...prev, ...newFileStates];
+      if (combined.length > 50) {
+        alert(txt.errMax(combined.length));
+        return combined.slice(0, 50);
+      }
+      return combined;
+    });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -100,7 +183,7 @@ export default function App() {
       });
 
       if (!response.ok) {
-        let errStr = 'Lỗi server';
+        let errStr = txt.errServer;
         try {
           const text = await response.text();
           try {
@@ -225,26 +308,32 @@ export default function App() {
             className={`flex items-center gap-2 text-sm font-bold tracking-wide transition-all h-full py-4 border-b-2 ${!showSettings ? 'text-[#00ff41] border-[#00ff41]' : 'text-white/60 border-transparent hover:text-white'}`}
           >
             <Layers className="w-4 h-4" />
-            Batch Mode {files.length > 0 && !showSettings && <span className="bg-[#00ff41] text-black text-[10px] px-1.5 py-0.5 rounded-full">{files.length}</span>}
+            {txt.batchMode} {files.length > 0 && !showSettings && <span className="bg-[#00ff41] text-black text-[10px] px-1.5 py-0.5 rounded-full">{files.length}</span>}
           </button>
           <button 
             onClick={() => setShowSettings(true)}
             className={`flex items-center gap-2 text-sm font-bold tracking-wide transition-all h-full py-4 border-b-2 ${showSettings ? 'text-[#00ff41] border-[#00ff41]' : 'text-white/60 border-transparent hover:text-white'}`}
           >
             <Settings className="w-4 h-4" />
-            Settings
+            {txt.settings}
           </button>
           <button className="flex items-center gap-2 text-white/60 text-sm font-bold tracking-wide transition-all h-full py-4 border-b-2 border-transparent hover:text-white cursor-not-allowed opacity-50">
             <History className="w-4 h-4" />
-            History
+            {txt.history}
           </button>
         </div>
 
         <div className="flex items-center gap-4">
-          <button className="hidden sm:flex items-center gap-2 text-white/70 text-xs font-semibold border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/5 transition-colors">
-            <Sparkles className="w-3.5 h-3.5" />
-            TEST SAMPLES
-          </button>
+          <div className="flex items-center bg-white/5 border border-white/10 rounded-full p-0.5">
+            <button 
+              onClick={() => setLang('en')}
+              className={`text-[10px] font-bold px-2 py-1 rounded-full transition-colors ${lang === 'en' ? 'bg-[#00ff41] text-black' : 'text-white/50 hover:text-white'}`}
+            >EN</button>
+            <button 
+              onClick={() => setLang('vi')}
+              className={`text-[10px] font-bold px-2 py-1 rounded-full transition-colors ${lang === 'vi' ? 'bg-[#00ff41] text-black' : 'text-white/50 hover:text-white'}`}
+            >VI</button>
+          </div>
           <div className="flex items-center gap-1.5 text-xs font-semibold text-white/50 border border-white/10 px-3 py-1.5 rounded-full">
             <ShieldCheck className="w-3.5 h-3.5" />
             100% IN-BROWSER PRIVACY
@@ -279,7 +368,7 @@ export default function App() {
               {/* Format */}
               <div className="space-y-4">
                 <h3 className="text-xs font-bold tracking-widest text-white uppercase flex items-center gap-2">
-                  <ImageIcon className="w-4 h-4 text-[#00ff41]" /> Output Image Format
+                  <ImageIcon className="w-4 h-4 text-[#00ff41]" /> {txt.outFormat}
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {[
@@ -310,7 +399,7 @@ export default function App() {
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold tracking-widest text-white uppercase flex items-center gap-2">
-                    <SlidersHorizontal className="w-4 h-4 text-[#00ff41]" /> Image Quality
+                    <SlidersHorizontal className="w-4 h-4 text-[#00ff41]" /> {txt.imgQuality}
                   </h3>
                   <span className="text-xl font-black text-[#00ff41]">{settings.quality}%</span>
                 </div>
@@ -349,14 +438,14 @@ export default function App() {
               {/* Resolution */}
               <div className="space-y-4">
                 <h3 className="text-xs font-bold tracking-widest text-white uppercase flex items-center gap-2">
-                  <Maximize className="w-4 h-4 text-[#00ff41]" /> Resize / Max Resolution
+                  <Maximize className="w-4 h-4 text-[#00ff41]" /> {txt.resizeOutput}
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                   {[
-                    { id: 'original', label: 'Original Resolution (100%)' },
-                    { id: '4k', label: '4K Ultra HD (Max 3840px)' },
-                    { id: '1080p', label: 'Full HD 1080p (Max 1920px)' },
-                    { id: '720p', label: 'Web HD (Max 1280px)' }
+                    { id: 'original', label: txt.originalRes },
+                    { id: '4k', label: txt.uhd },
+                    { id: '1080p', label: txt.fhd },
+                    { id: '720p', label: txt.hd }
                   ].map(res => (
                     <button
                       key={res.id}
@@ -376,7 +465,7 @@ export default function App() {
               {/* Suffix */}
               <div className="space-y-4 pt-8 border-t border-white/5">
                 <h3 className="text-xs font-bold tracking-widest text-white uppercase flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-[#00ff41]" /> Output Filename Suffix
+                  <FileText className="w-4 h-4 text-[#00ff41]" /> {txt.suffixOut}
                 </h3>
                 <div className="flex items-center gap-3 text-sm font-medium text-white/50">
                   <span>photo</span>
@@ -395,12 +484,9 @@ export default function App() {
         ) : (
           <>
             {/* Hero Header */}
-            <div className="relative z-10 text-center mb-16 select-none">
-              <h1 className="text-5xl sm:text-7xl md:text-8xl font-black tracking-tighter leading-[0.9] uppercase text-white">
-                DROP<br/>
-                YOUR<br/>
-                <span className="text-[#00ff41]">IMAGES</span><br/>
-                HERE
+            <div className="relative z-10 text-center mb-8 select-none">
+              <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tighter uppercase text-white">
+                {txt.hero1} <span className="text-[#00ff41]">{txt.hero2}</span>
               </h1>
             </div>
 
@@ -434,25 +520,25 @@ export default function App() {
                   
                   <div className="space-y-3">
                     <p className="text-lg md:text-xl font-bold tracking-wide text-white">
-                      SELECT OR DRAG HEIC FILES
+                      {txt.dragDrop}
                     </p>
                     <p className="text-xs font-medium tracking-wide text-white/40 uppercase">
-                      Supports batch upload • Max file size: 100MB per image
+                      {txt.dragDesc}
                     </p>
                   </div>
 
                   <div className="flex flex-wrap items-center justify-center gap-4 text-[10px] font-bold tracking-widest text-white/40 uppercase">
-                    <span className="flex items-center gap-1.5"><Check className="w-3 h-3 text-[#00ff41]" /> HIGH QUALITY {settings.format}</span>
+                    <span className="flex items-center gap-1.5"><Check className="w-3 h-3 text-[#00ff41]" /> {txt.hq} {settings.format}</span>
                     <span>•</span>
-                    <span className="flex items-center gap-1.5"><Check className="w-3 h-3 text-[#00ff41]" /> FAST PROCESSING</span>
+                    <span className="flex items-center gap-1.5"><Check className="w-3 h-3 text-[#00ff41]" /> {txt.fast}</span>
                     <span>•</span>
-                    <span className="flex items-center gap-1.5"><Check className="w-3 h-3 text-[#00ff41]" /> EXIF PRESERVED</span>
+                    <span className="flex items-center gap-1.5"><Check className="w-3 h-3 text-[#00ff41]" /> {txt.exif}</span>
                   </div>
                 </div>
               </div>
 
               <div className="mt-6 text-center flex items-center justify-center gap-2 text-xs font-medium text-white/40 uppercase tracking-widest">
-                Powered by 
+                {txt.poweredBy} 
                 <a href="https://inhuydat.com" target="_blank" rel="noopener noreferrer" className="text-white hover:text-[#00ff41] transition-colors">
                   INHUYDAT
                 </a>
@@ -463,13 +549,13 @@ export default function App() {
             {files.length > 0 && (
               <div className="relative z-10 w-full max-w-4xl space-y-3 mt-12 pb-32">
                 <div className="flex items-center justify-between mb-6 px-2">
-                  <h2 className="text-sm font-bold tracking-widest text-white/40 uppercase">Conversion Queue</h2>
+                  <h2 className="text-sm font-bold tracking-widest text-white/40 uppercase">{txt.queue}</h2>
                   {files.some(f => f.status === 'pending' || f.status === 'error') && (
                     <button 
                       onClick={convertAll}
-                      className="text-xs font-bold tracking-widest text-[#00ff41] hover:text-white uppercase flex items-center gap-2 transition-colors cursor-pointer"
+                      className="text-xs font-black tracking-widest bg-[#00ff41] text-[#050505] px-6 py-3 rounded-full hover:bg-white hover:text-black uppercase flex items-center gap-2 transition-all cursor-pointer shadow-[0_0_20px_rgba(0,255,65,0.3)] hover:shadow-[0_0_30px_rgba(255,255,255,0.4)]"
                     >
-                      <RefreshCw className="w-3.5 h-3.5" /> Convert Remaining
+                      <RefreshCw className="w-4 h-4" /> {txt.convertRem}
                     </button>
                   )}
                 </div>
@@ -535,13 +621,13 @@ export default function App() {
                               onClick={() => convertFile(file.id)}
                               className="text-xs font-bold px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
                             >
-                              CONVERT NOW
+                              {txt.convertNow.toUpperCase()}
                             </button>
                           )}
 
                           {file.status === 'converting' && (
                             <span className="text-xs font-bold text-white/40 tracking-widest uppercase flex items-center gap-2 px-2">
-                              <RefreshCw className="w-3 h-3 animate-spin" /> Processing
+                              <RefreshCw className="w-3 h-3 animate-spin" /> {txt.processing}
                             </span>
                           )}
                           
@@ -549,7 +635,7 @@ export default function App() {
                             <>
                               <div className="flex items-center gap-1.5 text-[#00ff41] mr-2">
                                 <CheckCircle2 className="w-4 h-4" />
-                                <span className="text-xs font-bold tracking-widest uppercase">READY ({settings.format})</span>
+                                <span className="text-xs font-bold tracking-widest uppercase">{txt.ready.toUpperCase()} ({settings.format})</span>
                               </div>
                               {file.convertedUrl && (
                                 <a
@@ -564,9 +650,9 @@ export default function App() {
                               )}
                               <button
                                 onClick={() => downloadFile(file)}
-                                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#00ff41] text-black hover:bg-[#00e63a] font-bold text-xs tracking-widest transition-colors cursor-pointer"
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#00ff41] text-black hover:bg-[#00e63a] font-bold text-xs tracking-widest transition-colors cursor-pointer uppercase"
                               >
-                                <Download className="w-4 h-4" /> DOWNLOAD
+                                <Download className="w-4 h-4" /> {txt.dl}
                               </button>
                             </>
                           )}
@@ -578,7 +664,7 @@ export default function App() {
                                 onClick={() => convertFile(file.id)}
                                 className="text-xs font-bold px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
                               >
-                                RETRY
+                                {txt.retry.toUpperCase()}
                               </button>
                             </div>
                           )}
@@ -615,7 +701,7 @@ export default function App() {
               {/* Queue Status */}
               <div className="flex flex-col gap-2 w-full md:w-auto">
                 <div className="text-[10px] font-bold tracking-widest text-white/40 uppercase">
-                  ACTIVE QUEUE ({files.length})
+                  {txt.activeQueue} ({files.length})
                 </div>
                 <div className="flex items-center gap-2">
                   {files.slice(0, 4).map(f => (
@@ -645,12 +731,12 @@ export default function App() {
                 </div>
                 {allSuccess && (
                   <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-[#00ff41] uppercase">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> ALL FILES CONVERTED SUCCESSFULLY
+                    <CheckCircle2 className="w-3.5 h-3.5" /> {txt.allSuccess}
                   </div>
                 )}
                 {!allSuccess && files.some(f => f.status === 'converting') && (
                   <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-white/50 uppercase animate-pulse">
-                    <RefreshCw className="w-3 h-3 animate-spin" /> CONVERTING...
+                    <RefreshCw className="w-3 h-3 animate-spin" /> {txt.converting}
                   </div>
                 )}
               </div>
@@ -669,7 +755,7 @@ export default function App() {
                   `}
                 >
                   <Download className="w-5 h-5" />
-                  DOWNLOAD ALL (ZIP)
+                  {txt.dlAll}
                 </button>
               </div>
 
