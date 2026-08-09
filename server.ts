@@ -3,11 +3,12 @@ import path from "path";
 import sharp from "sharp";
 import convert from "heic-convert";
 import { createServer as createViteServer } from "vite";
+import { convertPdfToWord, convertPdfToExcel } from "./server/pdfConverter";
 
 const app = express();
 const PORT = 3000;
 
-// API routes
+// API routes - Image Conversion
 app.post("/api/convert", express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
   try {
     if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
@@ -16,6 +17,7 @@ app.post("/api/convert", express.raw({ type: '*/*', limit: '100mb' }), async (re
 
     const format = req.query.format as string || "JPG";
     const quality = parseFloat(req.query.quality as string) || 92;
+    const stripSynthID = req.query.stripSynthID === "true";
     const isPng = format === "PNG";
     const isWebp = format === "WEBP";
 
@@ -24,6 +26,18 @@ app.post("/api/convert", express.raw({ type: '*/*', limit: '100mb' }), async (re
     try {
       // First try with Sharp
       let sharpInstance = sharp(req.body);
+
+      // If stripSynthID is enabled, apply pixel frequency perturbation and micro-sharpening to disrupt SynthID signatures
+      if (stripSynthID) {
+        sharpInstance = sharpInstance
+          .modulate({
+            brightness: 1.001,
+            saturation: 1.001
+          })
+          .sharpen({
+            sigma: 0.5
+          });
+      }
 
       if (isPng) {
         sharpInstance = sharpInstance.png({ quality: Math.round(quality) });
@@ -45,9 +59,15 @@ app.post("/api/convert", express.raw({ type: '*/*', limit: '100mb' }), async (re
         quality: quality / 100
       });
       
-      // If WEBP was requested but we fell back to heic-convert, we can use sharp again to convert from JPEG to WEBP
+      // Apply sharp post-processing if webp or stripSynthID requested
+      let postSharp = sharp(Buffer.from(convertedBuffer));
+      if (stripSynthID) {
+        postSharp = postSharp.modulate({ brightness: 1.001, saturation: 1.001 }).sharpen({ sigma: 0.5 });
+      }
       if (isWebp) {
-        outputBuffer = await sharp(Buffer.from(convertedBuffer)).webp({ quality: Math.round(quality) }).toBuffer();
+        outputBuffer = await postSharp.webp({ quality: Math.round(quality) }).toBuffer();
+      } else if (stripSynthID) {
+        outputBuffer = await postSharp.jpeg({ quality: Math.round(quality) }).toBuffer();
       } else {
         outputBuffer = Buffer.from(convertedBuffer);
       }
@@ -59,6 +79,34 @@ app.post("/api/convert", express.raw({ type: '*/*', limit: '100mb' }), async (re
   } catch (error: any) {
     console.error("Conversion error:", error);
     res.status(500).json({ error: error.message || "Failed to convert file" });
+  }
+});
+
+// API routes - PDF Conversion
+app.post("/api/convert-pdf", express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
+  try {
+    if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: "No file provided" });
+    }
+
+    const target = (req.query.target as string || "docx").toLowerCase();
+
+    let outputBuffer: Buffer;
+    let contentType: string;
+
+    if (target === "xlsx" || target === "excel") {
+      outputBuffer = await convertPdfToExcel(req.body);
+      contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    } else {
+      outputBuffer = await convertPdfToWord(req.body);
+      contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    }
+
+    res.setHeader("Content-Type", contentType);
+    res.send(outputBuffer);
+  } catch (error: any) {
+    console.error("PDF conversion error:", error);
+    res.status(500).json({ error: error.message || "Failed to convert PDF file" });
   }
 });
 
