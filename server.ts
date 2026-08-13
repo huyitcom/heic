@@ -3,7 +3,7 @@ import path from "path";
 import sharp from "sharp";
 import convert from "heic-convert";
 import { createServer as createViteServer } from "vite";
-import { convertPdfToWord, convertPdfToExcel } from "./server/pdfConverter";
+import { convertPdfToWord, convertPdfToExcel, convertPdfToJpg } from "./server/pdfConverter";
 
 const app = express();
 const PORT = 3000;
@@ -90,6 +90,18 @@ app.post("/api/convert-pdf", express.raw({ type: '*/*', limit: '100mb' }), async
     }
 
     const target = (req.query.target as string || "docx").toLowerCase();
+
+    if (target === "jpg" || target === "jpeg") {
+      const result = await convertPdfToJpg(req.body);
+      if (result.isZip) {
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader("Content-Disposition", `attachment; filename="pages_jpg.zip"`);
+      } else {
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Content-Disposition", `attachment; filename="page.jpg"`);
+      }
+      return res.send(result.buffer);
+    }
 
     let outputBuffer: Buffer;
     let contentType: string;

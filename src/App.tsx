@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Upload, Settings, History, Download, Trash2, 
   CheckCircle2, ImageIcon, Layers, ShieldCheck, Check, 
@@ -31,9 +31,9 @@ const t = {
     hero2Image: "ẢNH VÀO ĐÂY",
     hero2Pdf: "FILE PDF VÀO ĐÂY",
     dragDropImage: "CHỌN HOẶC KÉO THẢ FILE ẢNH (HEIC, JPG, PNG, WEBP...)",
-    dragDropPdf: "CHỌN HOẶC KÉO THẢ FILE PDF (SANG WORD / EXCEL)",
+    dragDropPdf: "CHỌN HOẶC KÉO THẢ FILE PDF (SANG WORD / EXCEL / JPG)",
     dragDescImage: "Hỗ trợ upload hàng loạt • Tối đa 100MB mỗi ảnh",
-    dragDescPdf: "Trích xuất văn bản & bảng biểu sang Word/Excel • Tối đa 100MB",
+    dragDescPdf: "Trích xuất văn bản, bảng biểu & xuất trang PDF thành JPG • Tối đa 100MB",
     hq: "CHẤT LƯỢNG CAO",
     fast: "XỬ LÝ NHANH",
     exif: "GIỮ NGUYÊN EXIF",
@@ -80,9 +80,9 @@ const t = {
     hero2Image: "IMAGES HERE",
     hero2Pdf: "PDF FILES HERE",
     dragDropImage: "SELECT OR DRAG IMAGE FILES (HEIC, JPG, PNG, WEBP...)",
-    dragDropPdf: "SELECT OR DRAG PDF FILES (TO WORD / EXCEL)",
+    dragDropPdf: "SELECT OR DRAG PDF FILES (TO WORD / EXCEL / JPG)",
     dragDescImage: "Supports batch upload • Max file size: 100MB per image",
-    dragDescPdf: "Extract text & tables into Word/Excel • Max 100MB",
+    dragDescPdf: "Extract text, tables or convert PDF pages to JPG • Max 100MB",
     hq: "HIGH QUALITY",
     fast: "FAST PROCESSING",
     exif: "EXIF PRESERVED",
@@ -129,7 +129,7 @@ export default function App() {
   const txt = t[lang];
 
   const [activeTab, setActiveTab] = useState<'image' | 'pdf'>('image');
-  const [pdfTarget, setPdfTarget] = useState<'docx' | 'xlsx'>('docx');
+  const [pdfTarget, setPdfTarget] = useState<'docx' | 'xlsx' | 'jpg'>('docx');
 
   const [files, setFiles] = useState<FileState[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -278,6 +278,45 @@ export default function App() {
     }
   };
 
+  const convertingIdsRef = useRef<Set<string>>(new Set());
+
+  const handlePdfTargetChange = (newTarget: 'docx' | 'xlsx' | 'jpg') => {
+    setPdfTarget(newTarget);
+    setFiles((prev) =>
+      prev.map((f) => {
+        const isPdf = activeTab === 'pdf' || f.file.name.toLowerCase().endsWith('.pdf');
+        if (isPdf) {
+          if (f.convertedUrl) {
+            URL.revokeObjectURL(f.convertedUrl);
+          }
+          return {
+            ...f,
+            targetFormatOverride: newTarget,
+            status: 'pending',
+            convertedBlob: undefined,
+            convertedUrl: undefined,
+            error: undefined
+          };
+        }
+        return f;
+      })
+    );
+  };
+
+  useEffect(() => {
+    const pendingFiles = files.filter(
+      (f) => f.status === 'pending' && !convertingIdsRef.current.has(f.id)
+    );
+    if (pendingFiles.length > 0) {
+      pendingFiles.forEach((f) => {
+        convertingIdsRef.current.add(f.id);
+        convertFile(f.id, f).finally(() => {
+          convertingIdsRef.current.delete(f.id);
+        });
+      });
+    }
+  }, [files, activeTab, pdfTarget, settings]);
+
   const convertAll = async () => {
     const filesToConvert = files.filter(f => f.status === 'pending' || f.status === 'error');
     for (const f of filesToConvert) {
@@ -303,6 +342,12 @@ export default function App() {
     if (isPdf) {
       const baseName = originalName.replace(/\.pdf$/i, '');
       const ext = fileState.targetFormatOverride || pdfTarget;
+      if (ext === 'jpg' || ext === 'jpeg') {
+        if (fileState.convertedBlob?.type === 'application/zip') {
+          return `${baseName}${settings.suffix}_jpg_pages.zip`;
+        }
+        return `${baseName}${settings.suffix}.jpg`;
+      }
       return `${baseName}${settings.suffix}.${ext}`;
     } else {
       const baseName = originalName.replace(/\.[^/.]+$/, '');
@@ -590,11 +635,11 @@ export default function App() {
 
             {/* Target Selector for PDF inside PDF Tab */}
             {activeTab === 'pdf' && (
-              <div className="relative z-10 flex items-center gap-4 mb-6">
+              <div className="relative z-10 flex items-center gap-4 mb-6 flex-wrap justify-center sm:justify-start">
                 <span className="text-xs font-bold tracking-wider text-white/50 uppercase">Tùy chọn đầu ra:</span>
-                <div className="flex bg-[#111] border border-white/10 p-1 rounded-xl">
+                <div className="flex bg-[#111] border border-white/10 p-1 rounded-xl gap-1">
                   <button
-                    onClick={() => setPdfTarget('docx')}
+                    onClick={() => handlePdfTargetChange('docx')}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all ${
                       pdfTarget === 'docx' ? 'bg-[#38bdf8] text-black' : 'text-white/60 hover:text-white'
                     }`}
@@ -602,12 +647,20 @@ export default function App() {
                     <FileCode className="w-3.5 h-3.5" /> Word (.docx)
                   </button>
                   <button
-                    onClick={() => setPdfTarget('xlsx')}
+                    onClick={() => handlePdfTargetChange('xlsx')}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all ${
                       pdfTarget === 'xlsx' ? 'bg-[#38bdf8] text-black' : 'text-white/60 hover:text-white'
                     }`}
                   >
                     <TableIcon className="w-3.5 h-3.5" /> Excel (.xlsx)
+                  </button>
+                  <button
+                    onClick={() => handlePdfTargetChange('jpg')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all ${
+                      pdfTarget === 'jpg' ? 'bg-[#38bdf8] text-black' : 'text-white/60 hover:text-white'
+                    }`}
+                  >
+                    <ImageIcon className="w-3.5 h-3.5" /> Hình ảnh (.jpg)
                   </button>
                 </div>
               </div>
@@ -661,7 +714,7 @@ export default function App() {
                       </>
                     ) : (
                       <>
-                        <span className="flex items-center gap-1.5"><Check className="w-3 h-3 text-[#38bdf8]" /> WORD &amp; EXCEL OUTPUT</span>
+                        <span className="flex items-center gap-1.5"><Check className="w-3 h-3 text-[#38bdf8]" /> WORD, EXCEL &amp; JPG OUTPUT</span>
                         <span>•</span>
                         <span className="flex items-center gap-1.5"><Check className="w-3 h-3 text-[#38bdf8]" /> {txt.fast}</span>
                         <span>•</span>

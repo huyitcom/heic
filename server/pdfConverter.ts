@@ -1,10 +1,203 @@
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import path from 'node:path';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle } from 'docx';
 import ExcelJS from 'exceljs';
 import { GoogleGenAI } from '@google/genai';
+import JSZip from 'jszip';
+import * as canvasModule from '@napi-rs/canvas';
+
+if (typeof globalThis !== 'undefined') {
+  (globalThis as any).Path2D = canvasModule.Path2D;
+  (globalThis as any).ImageData = canvasModule.ImageData;
+  (globalThis as any).DOMMatrix = canvasModule.DOMMatrix;
+}
 
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
+
+function tryGetPath2D(arg: any): any {
+  if (arg instanceof canvasModule.Path2D) return arg;
+  if (typeof arg === 'string') {
+    if (arg === 'nonzero' || arg === 'evenodd') return null;
+    try { return new canvasModule.Path2D(arg); } catch (_) {}
+  }
+  if (arg && typeof arg === 'object') {
+    const str = arg.d || arg._d || arg.pathData || (typeof arg.toString === 'function' ? arg.toString() : null);
+    if (typeof str === 'string' && str.length > 0 && str !== '[object Object]') {
+      try { return new canvasModule.Path2D(str); } catch (_) {}
+    }
+  }
+  return null;
+}
+
+function makeCanvasContextRobust(ctx: any) {
+  const origClip = ctx.clip;
+  ctx.clip = function (...args: any[]) {
+    try {
+      if (args.length === 0) return origClip.call(this);
+      const pathObj = tryGetPath2D(args[0]);
+      const rule = typeof args[0] === 'string' ? args[0] : (typeof args[1] === 'string' ? args[1] : undefined);
+      if (pathObj) {
+        return rule ? origClip.call(this, pathObj, rule) : origClip.call(this, pathObj);
+      }
+      if (rule) {
+        return origClip.call(this, rule);
+      }
+      return origClip.call(this);
+    } catch (_) {
+      try { return origClip.call(this); } catch (e) {}
+    }
+  };
+
+  const origFill = ctx.fill;
+  ctx.fill = function (...args: any[]) {
+    try {
+      if (args.length === 0) return origFill.call(this);
+      const pathObj = tryGetPath2D(args[0]);
+      const rule = typeof args[0] === 'string' ? args[0] : (typeof args[1] === 'string' ? args[1] : undefined);
+      if (pathObj) {
+        return rule ? origFill.call(this, pathObj, rule) : origFill.call(this, pathObj);
+      }
+      if (rule) {
+        return origFill.call(this, rule);
+      }
+      return origFill.call(this);
+    } catch (_) {
+      try { return origFill.call(this); } catch (e) {}
+    }
+  };
+
+  const origStroke = ctx.stroke;
+  ctx.stroke = function (...args: any[]) {
+    try {
+      if (args.length === 0) return origStroke.call(this);
+      const pathObj = tryGetPath2D(args[0]);
+      if (pathObj) return origStroke.call(this, pathObj);
+      return origStroke.call(this);
+    } catch (_) {
+      try { return origStroke.call(this); } catch (e) {}
+    }
+  };
+
+  const origSetTransform = ctx.setTransform;
+  ctx.setTransform = function (...args: any[]) {
+    try {
+      if (args.length === 6) {
+        return origSetTransform.apply(this, args.map((a: any) => Number(a) || 0));
+      }
+      if (args.length === 1 && args[0] && typeof args[0] === 'object') {
+        const { a = 1, b = 0, c = 0, d = 1, e = 0, f = 0 } = args[0];
+        return origSetTransform.call(this, a, b, c, d, e, f);
+      }
+      return origSetTransform.call(this, 1, 0, 0, 1, 0, 0);
+    } catch (_) {
+      try { return origSetTransform.call(this, 1, 0, 0, 1, 0, 0); } catch (e) {}
+    }
+  };
+
+  const origTransform = ctx.transform;
+  ctx.transform = function (...args: any[]) {
+    try {
+      if (args.length >= 6) {
+        return origTransform.apply(this, args.slice(0, 6).map((a: any) => Number(a) || 0));
+      }
+    } catch (_) {}
+  };
+
+  const origDrawImage = ctx.drawImage;
+  ctx.drawImage = function (...args: any[]) {
+    try {
+      if (!args[0]) return;
+      return origDrawImage.apply(this, args);
+    } catch (_) {}
+  };
+
+  const origCreatePattern = ctx.createPattern;
+  ctx.createPattern = function (...args: any[]) {
+    try {
+      if (!args[0]) return null;
+      return origCreatePattern.apply(this, args);
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const origIsPointInPath = ctx.isPointInPath;
+  ctx.isPointInPath = function (...args: any[]) {
+    try {
+      return origIsPointInPath.apply(this, args);
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const origIsPointInStroke = ctx.isPointInStroke;
+  ctx.isPointInStroke = function (...args: any[]) {
+    try {
+      return origIsPointInStroke.apply(this, args);
+    } catch (_) {
+      return false;
+    }
+  };
+}
+
+export async function convertPdfToJpg(pdfBuffer: Buffer): Promise<{ buffer: Buffer; isZip: boolean; count: number }> {
+  const workerModule = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
+  (globalThis as any).pdfjsWorker = workerModule;
+
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+
+  const pdfjsPkgPath = require.resolve('pdfjs-dist/package.json');
+  const pdfjsDir = path.dirname(pdfjsPkgPath);
+  const cMapUrl = pathToFileURL(path.join(pdfjsDir, 'cmaps') + '/').href;
+  const standardFontDataUrl = pathToFileURL(path.join(pdfjsDir, 'standard_fonts') + '/').href;
+
+  const data = new Uint8Array(pdfBuffer);
+  const loadingTask = pdfjsLib.getDocument({
+    data,
+    cMapUrl,
+    cMapPacked: true,
+    standardFontDataUrl,
+  });
+
+  const pdfDocument = await loadingTask.promise;
+  const numPages = pdfDocument.numPages;
+  const jpgBuffers: { name: string; buffer: Buffer }[] = [];
+
+  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+    const page = await pdfDocument.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 2.0 });
+    
+    const canvas = canvasModule.createCanvas(Math.floor(viewport.width), Math.floor(viewport.height));
+    const context = canvas.getContext('2d');
+    makeCanvasContextRobust(context);
+
+    await page.render({
+      canvasContext: context as any,
+      canvas: canvas as any,
+      viewport: viewport,
+    } as any).promise;
+
+    const jpegBuffer = canvas.toBuffer('image/jpeg');
+    jpgBuffers.push({
+      name: `page_${pageNum}.jpg`,
+      buffer: jpegBuffer,
+    });
+  }
+
+  if (jpgBuffers.length === 1) {
+    return { buffer: jpgBuffers[0].buffer, isZip: false, count: 1 };
+  }
+
+  const zip = new JSZip();
+  jpgBuffers.forEach((item) => {
+    zip.file(item.name, item.buffer);
+  });
+
+  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+  return { buffer: zipBuffer, isZip: true, count: jpgBuffers.length };
+}
 
 async function extractStructuredContentWithGemini(pdfBuffer: Buffer) {
   const apiKey = process.env.GEMINI_API_KEY;
